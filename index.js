@@ -1,7 +1,10 @@
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
+import http from 'node:http'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
+
+const NEXUS = process.env.DS_MINO_NEXUS || 'http://127.0.0.1:50104'
 
 const root = fileURLToPath(new URL('./lib/assets/app', import.meta.url))
 const types = {
@@ -24,11 +27,33 @@ function send(res, file) {
   createReadStream(file).pipe(res)
 }
 
+function proxyApi(req, res) {
+  const incoming = new URL(String(req.url || '/'), 'http://localhost')
+  const stripped = incoming.pathname.replace(/^\/ds-mino-api/, '') || '/'
+  const target = new URL(stripped + incoming.search, NEXUS)
+  const headers = { ...req.headers, host: target.host }
+  delete headers['transfer-encoding']
+  const upstream = http.request(target, { method: req.method, headers }, (incomingRes) => {
+    res.writeHead(incomingRes.statusCode || 502, incomingRes.headers)
+    incomingRes.pipe(res)
+  })
+  upstream.on('error', () => {
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
+    res.end('无法连接服务器')
+  })
+  req.pipe(upstream)
+}
+
 export function apply(ctx) {
   ctx.inject(['webServer'], (host) => {
     host.effect(() => host.webServer.register({
       kind: 'prefix',
-      path: '/ds-mino',
+      path: '/ds-mino-api',
+      handler: (req, res) => proxyApi(req, res),
+    }), 'ds-mino api')
+    host.effect(() => host.webServer.register({
+      kind: 'prefix',
+      path: '/ds-mino/',
       handler: async (req, res) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           res.writeHead(405)

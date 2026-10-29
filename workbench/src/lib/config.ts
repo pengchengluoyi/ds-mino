@@ -52,9 +52,19 @@ export const usesDevProxy = (): boolean => {
   return import.meta.env.DEV
 }
 
-export const getBaseUrl = (): string => (usesDevProxy() ? '' : nexusOrigin())
+const embedded = () => typeof window !== 'undefined' && window.location.pathname.startsWith('/ds-mino')
+
+export const getBaseUrl = (): string => {
+  if (usesDevProxy()) return ''
+  if (embedded()) return `${window.location.origin}/ds-mino-api`
+  return nexusOrigin()
+}
 
 export const getWsUrl = (): string => {
+  if (embedded()) {
+    const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+    return `${proto}//${window.location.host}/ds-mino-api/ws`
+  }
   if (usesDevProxy()) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${proto}//${window.location.host}/ws`
