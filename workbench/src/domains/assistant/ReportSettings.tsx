@@ -1,0 +1,45 @@
+import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Button, Input, Skeleton, errText, useFeedback } from '@/ui'
+import { getReportSettings, saveReportSettings } from '@/api/assistant'
+import { assistantKeys } from './queries'
+import { useUnsavedChanges } from '@/hooks/useUnsavedChanges'
+import { QueryProblem } from './AssistantNotReady'
+
+export function ReportSettings() {
+  const qc = useQueryClient()
+  const feedback = useFeedback()
+  const queryKey = [...assistantKeys.all, 'report-settings']
+  const settings = useQuery({ queryKey, queryFn: getReportSettings })
+  const [address, setAddress] = useState('')
+  const [baseline, setBaseline] = useState('')
+  const dirty = address !== baseline
+  useUnsavedChanges(dirty)
+  useEffect(() => {
+    if (settings.data && !dirty) { const value = settings.data.workbench_url || settings.data.effective_url; setAddress(value); setBaseline(value) }
+  }, [settings.data, dirty])
+  const save = useMutation({
+    mutationFn: saveReportSettings,
+    onSuccess: (value) => { const current = value.workbench_url || value.effective_url; setAddress(current); setBaseline(current); qc.setQueryData(queryKey, value); feedback.ok('报告地址已更新') },
+    onError: (error) => feedback.fail(errText(error)),
+  })
+  const host = window.location.hostname
+  const currentIsLan = !['localhost', '127.0.0.1', '[::1]'].includes(host) && ['http:', 'https:'].includes(window.location.protocol)
+  return <section className="w-surface-card" style={{ padding: 18 }}>
+    <strong>测试报告链接</strong>
+    {settings.isLoading ? <Skeleton active paragraph={{ rows: 2 }} /> : settings.isError ?
+      <QueryProblem error={settings.error} what="报告地址" onRetry={() => void settings.refetch()} /> : <>
+      <label htmlFor="report-workbench-url" style={{ display: 'block', fontSize: 13, marginBottom: 6 }}>Workbench 内网访问地址</label>
+      <div className="flex flex-wrap gap-2">
+        <Input id="report-workbench-url" aria-label="Workbench 内网访问地址" value={address} disabled={save.isPending}
+          placeholder="http://192.168.1.20:60104" style={{ maxWidth: 460 }} onChange={(event) => setAddress(event.target.value)} />
+        <Button type="primary" loading={save.isPending} onClick={() => save.mutate(address)}>保存报告地址</Button>
+        <Button disabled={!currentIsLan || save.isPending} title={currentIsLan ? undefined : '当前网页是本机地址'} onClick={() => setAddress(window.location.origin)}>使用当前网页地址</Button>
+        {settings.data?.workbench_url ? <Button disabled={save.isPending} onClick={() => save.mutate('')}>恢复默认</Button> : null}
+      </div>
+      <p style={{ marginBottom: 0, fontSize: 13, color: 'var(--w-text-tertiary)', overflowWrap: 'anywhere' }}>
+        {settings.data?.available ? settings.data.effective_url : '未取得可用内网地址'}
+      </p>
+    </>}
+  </section>
+}
