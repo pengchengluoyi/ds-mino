@@ -33,18 +33,56 @@ function requestFor(target) {
   return target.protocol === 'https:' ? https.request : http.request
 }
 
+const LOCAL_ORIGIN = /^https?:\/\/(?:127\.0\.0\.1|localhost|\[::1\])(?::\d+)?$/
+
+function allowedOrigin(req, origin) {
+  if (origin === 'dsh-app://app') return true
+  if (LOCAL_ORIGIN.test(origin)) return true
+  const host = req.headers.host
+  return !!host && (origin === `http://${host}` || origin === `https://${host}`)
+}
+
+function corsHeaders(req) {
+  const origin = req.headers.origin
+  if (!origin || !allowedOrigin(req, origin)) return {}
+  const headers = {
+    'Access-Control-Allow-Origin': origin,
+    'Access-Control-Allow-Methods': 'GET,HEAD,POST,PUT,PATCH,DELETE,OPTIONS',
+    'Access-Control-Allow-Headers': req.headers['access-control-request-headers'] || 'authorization,content-type,x-mino-client,accept',
+    'Access-Control-Max-Age': '600',
+    'Access-Control-Expose-Headers': 'content-disposition,content-length',
+    Vary: 'Origin',
+  }
+  if (req.headers['access-control-request-private-network'] === 'true') {
+    headers['Access-Control-Allow-Private-Network'] = 'true'
+  }
+  return headers
+}
+
 function proxyApi(req, res) {
+  const cors = corsHeaders(req)
+  if (req.method === 'OPTIONS') {
+    res.writeHead(cors['Access-Control-Allow-Origin'] ? 204 : 403, cors)
+    res.end()
+    return
+  }
   const incoming = new URL(String(req.url || '/'), 'http://localhost')
   const stripped = incoming.pathname.replace(/^\/ds-mino-api/, '') || '/'
   const target = new URL(stripped + incoming.search, NEXUS)
-  const headers = { ...req.headers, host: target.host }
+  const headers = { ...req.headers, host: target.host, origin: target.origin }
   delete headers['transfer-encoding']
+  delete headers.referer
   const upstream = requestFor(target)(target, { method: req.method, headers }, (incomingRes) => {
-    res.writeHead(incomingRes.statusCode || 502, incomingRes.headers)
+    const outgoing = { ...incomingRes.headers, ...cors }
+    const upstreamVary = incomingRes.headers.vary
+    if (cors.Vary && upstreamVary) {
+      outgoing.Vary = `${Array.isArray(upstreamVary) ? upstreamVary.join(', ') : upstreamVary}, Origin`
+    }
+    res.writeHead(incomingRes.statusCode || 502, outgoing)
     incomingRes.pipe(res)
   })
   upstream.on('error', () => {
-    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' })
+    if (!res.headersSent) res.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8', ...cors })
     res.end('无法连接服务器')
   })
   req.pipe(upstream)

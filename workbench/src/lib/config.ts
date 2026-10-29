@@ -54,7 +54,25 @@ export const usesDevProxy = (): boolean => {
 
 const embedded = () => typeof window !== 'undefined' && window.location.pathname.startsWith('/ds-mino')
 
+/**
+ * DSH Desktop loads the shell from `dsh-app://app`, so an iframe inherits that
+ * origin. XHR cannot speak that protocol; the panel passes the real HTTP host
+ * as `?api=...` and the app uses it for the API and WebSocket.
+ */
+const HOST_ORIGIN_KEY = 'ds-mino:host-origin'
+const hostOrigin = (() => {
+  if (typeof window === 'undefined') return ''
+  const clean = (value: string) => /^https?:\/\//.test(value) ? value.replace(/\/$/, '') : ''
+  const fromQuery = clean(new URLSearchParams(window.location.search).get('api') || '')
+  if (fromQuery) {
+    try { window.sessionStorage.setItem(HOST_ORIGIN_KEY, fromQuery) } catch { /* storage may be unavailable */ }
+    return fromQuery
+  }
+  try { return clean(window.sessionStorage.getItem(HOST_ORIGIN_KEY) || '') } catch { return '' }
+})()
+
 export const getBaseUrl = (): string => {
+  if (hostOrigin) return `${hostOrigin}/ds-mino-api`
   if (usesDevProxy()) return ''
   if (embedded()) return `${window.location.origin}/ds-mino-api`
   return nexusOrigin()
@@ -62,11 +80,16 @@ export const getBaseUrl = (): string => {
 
 /** Human-facing endpoint label. Embedded mode can only name the same-origin proxy. */
 export const nexusLabel = (): string => {
+  if (hostOrigin) return `${new URL(hostOrigin).host}/ds-mino-api`
   if (embedded()) return `${window.location.host}/ds-mino-api`
   return nexusOrigin().replace(/^https?:\/\//, '')
 }
 
 export const getWsUrl = (): string => {
+  if (hostOrigin) {
+    const url = new URL(hostOrigin)
+    return `${url.protocol === 'https:' ? 'wss:' : 'ws:'}//${url.host}/ds-mino-api/ws`
+  }
   if (embedded()) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
     return `${proto}//${window.location.host}/ds-mino-api/ws`
