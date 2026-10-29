@@ -23,7 +23,7 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), 'VITE_')
   const nexus = env.VITE_PROXY_TARGET || env.VITE_NEXUS_URL || 'http://127.0.0.1:50101'
   return {
-    base: '/plugins/ds-mino/assets/app/',
+    base: '/ds-mino/',
     plugins: [react(), tailwindcss(), {
       name: 'local-development-only',
       configResolved(config) {

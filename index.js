@@ -1,6 +1,67 @@
+import { createReadStream } from 'node:fs'
+import { stat } from 'node:fs/promises'
+import { extname, join, normalize } from 'node:path'
+import { fileURLToPath } from 'node:url'
+
+const root = fileURLToPath(new URL('./lib/assets/app', import.meta.url))
+const types = {
+  '.html': 'text/html; charset=utf-8',
+  '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8',
+  '.json': 'application/json',
+  '.svg': 'image/svg+xml',
+  '.png': 'image/png',
+  '.zip': 'application/zip',
+  '.woff2': 'font/woff2',
+  '.map': 'application/json',
+}
+
 export const name = 'ds-mino'
 
+function send(res, file) {
+  const type = types[extname(file)] || 'application/octet-stream'
+  res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-cache' })
+  createReadStream(file).pipe(res)
+}
+
 export function apply(ctx) {
-  const log = ctx.logger?.info?.bind(ctx.logger) || console.info
-  log('[ds-mino] 插件已加载')
+  ctx.inject(['webServer'], (host) => {
+    host.effect(() => host.webServer.register({
+      kind: 'prefix',
+      path: '/ds-mino',
+      handler: async (req, res) => {
+        if (req.method !== 'GET' && req.method !== 'HEAD') {
+          res.writeHead(405)
+          res.end()
+          return
+        }
+        const pathname = new URL(String(req.url || '/'), 'http://localhost').pathname
+        let rel = decodeURIComponent(pathname.replace(/^\/ds-mino\/?/, ''))
+        if (!rel) rel = 'index.html'
+        const file = normalize(join(root, rel))
+        if (!file.startsWith(root)) {
+          res.writeHead(403)
+          res.end()
+          return
+        }
+        try {
+          const info = await stat(file)
+          const target = info.isDirectory() ? join(file, 'index.html') : file
+          if (req.method === 'HEAD') {
+            res.writeHead(200, { 'Content-Type': types[extname(target)] || 'application/octet-stream' })
+            res.end()
+            return
+          }
+          send(res, target)
+        } catch {
+          if (!extname(rel)) {
+            send(res, join(root, 'index.html'))
+            return
+          }
+          res.writeHead(404)
+          res.end()
+        }
+      },
+    }), 'ds-mino files')
+  })
 }
