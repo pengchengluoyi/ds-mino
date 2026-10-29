@@ -45,7 +45,9 @@ function proxyApi(req, res) {
 }
 
 export function apply(ctx) {
+  try {
   ctx.inject(['webServer'], (host) => {
+    try {
     host.effect(() => host.webServer.register({
       kind: 'prefix',
       path: '/ds-mino-api',
@@ -88,5 +90,7 @@ export function apply(ctx) {
         }
       },
     }), 'ds-mino files')
+    } catch (error) {}
   })
+  } catch (error) {}
 }
