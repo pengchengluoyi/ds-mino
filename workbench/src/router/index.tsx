@@ -42,6 +42,7 @@ const lazyPage = (node: ReactNode) => (
  * 两套导航独立，原 URL 全部保留，不加前缀（方案 §5.1）。
  * Studio 用 /testing /settings，Console 用 /dashboard /catalog 等，实测零冲突。
  */
+const basename = import.meta.env.BASE_URL.replace(/\/$/, '')
 export const router = createBrowserRouter([{ element: <><DraftNavigationGuard /><Outlet /></>, children: [
   {
     path: '/login',
@@ -123,4 +124,4 @@ export const router = createBrowserRouter([{ element: <><DraftNavigationGuard />
   },
 
   { path: '*', element: <UnavailableRoute /> },
-] }])
+] }], { basename })
