@@ -1,6 +1,6 @@
 {
   "name": "ds-qa",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "module",
   "description": "在 DSH 里打开 Workbench",
   "main": "index.js",
