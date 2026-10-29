@@ -1,6 +1,6 @@
 {
   "name": "ds-mino",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "type": "module",
   "description": "在 DSH 里打开 ds-mino",
   "main": "index.js",

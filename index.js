@@ -1,6 +1,7 @@
 import { createReadStream } from 'node:fs'
 import { stat } from 'node:fs/promises'
 import http from 'node:http'
+import https from 'node:https'
 import { extname, join, normalize } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -27,13 +28,18 @@ function send(res, file) {
   createReadStream(file).pipe(res)
 }
 
+/** Pick the HTTP client matching the configured Nexus origin. */
+function requestFor(target) {
+  return target.protocol === 'https:' ? https.request : http.request
+}
+
 function proxyApi(req, res) {
   const incoming = new URL(String(req.url || '/'), 'http://localhost')
   const stripped = incoming.pathname.replace(/^\/ds-mino-api/, '') || '/'
   const target = new URL(stripped + incoming.search, NEXUS)
   const headers = { ...req.headers, host: target.host }
   delete headers['transfer-encoding']
-  const upstream = http.request(target, { method: req.method, headers }, (incomingRes) => {
+  const upstream = requestFor(target)(target, { method: req.method, headers }, (incomingRes) => {
     res.writeHead(incomingRes.statusCode || 502, incomingRes.headers)
     incomingRes.pipe(res)
   })
@@ -42,6 +48,51 @@ function proxyApi(req, res) {
     res.end('无法连接服务器')
   })
   req.pipe(upstream)
+}
+
+/** Write an HTTP handshake response back to the browser socket. */
+function writeUpgradeHead(socket, statusCode, statusMessage, rawHeaders) {
+  const lines = [`HTTP/1.1 ${statusCode} ${statusMessage || ''}`]
+  for (let i = 0; i < rawHeaders.length; i += 2) {
+    lines.push(`${rawHeaders[i]}: ${rawHeaders[i + 1]}`)
+  }
+  socket.write(`${lines.join('\r\n')}\r\n\r\n`)
+}
+
+/**
+ * Proxy the workbench realtime WebSocket. dsh-host-webserver only matches
+ * exact upgrade paths, so this handler owns `/ds-mino-api/ws` and forwards the
+ * handshake to Nexus while keeping the browser talking to the same origin.
+ */
+function proxyUpgrade(req, socket, head) {
+  const incoming = new URL(String(req.url || '/'), 'http://localhost')
+  const stripped = incoming.pathname.replace(/^\/ds-mino-api/, '') || '/'
+  const target = new URL(stripped + incoming.search, NEXUS)
+  const headers = { ...req.headers, host: target.host, origin: target.origin }
+  delete headers['transfer-encoding']
+  const upstream = requestFor(target)(target, { method: req.method || 'GET', headers })
+
+  upstream.on('upgrade', (incomingRes, upstreamSocket, upstreamHead) => {
+    writeUpgradeHead(socket, incomingRes.statusCode || 101, incomingRes.statusMessage || 'Switching Protocols', incomingRes.rawHeaders)
+    if (upstreamHead?.length) socket.write(upstreamHead)
+    if (head?.length) upstreamSocket.write(head)
+    upstreamSocket.pipe(socket)
+    socket.pipe(upstreamSocket)
+    upstreamSocket.on('error', () => socket.destroy())
+    socket.on('error', () => upstreamSocket.destroy())
+    upstreamSocket.on('close', () => socket.destroy())
+    socket.on('close', () => upstreamSocket.destroy())
+  })
+
+  // Nexus refused the upgrade (401, wrong path, ...): relay the response so the
+  // browser sees a real handshake failure instead of a silent hang.
+  upstream.on('response', (incomingRes) => {
+    writeUpgradeHead(socket, incomingRes.statusCode || 502, incomingRes.statusMessage || '', incomingRes.rawHeaders)
+    incomingRes.pipe(socket)
+  })
+
+  upstream.on('error', () => socket.destroy())
+  upstream.end()
 }
 
 export function apply(ctx) {
@@ -55,7 +106,7 @@ export function apply(ctx) {
     }), 'ds-mino api')
     host.effect(() => host.webServer.register({
       kind: 'prefix',
-      path: '/ds-mino/',
+      path: '/ds-mino',
       handler: async (req, res) => {
         if (req.method !== 'GET' && req.method !== 'HEAD') {
           res.writeHead(405)
@@ -90,6 +141,10 @@ export function apply(ctx) {
         }
       },
     }), 'ds-mino files')
+    host.effect(() => host.webServer.registerUpgrade({
+      path: '/ds-mino-api/ws',
+      handler: (req, socket, head) => proxyUpgrade(req, socket, head),
+    }), 'ds-mino websocket')
     } catch (error) {}
   })
   } catch (error) {}

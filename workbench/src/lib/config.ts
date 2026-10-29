@@ -60,6 +60,12 @@ export const getBaseUrl = (): string => {
   return nexusOrigin()
 }
 
+/** Human-facing endpoint label. Embedded mode can only name the same-origin proxy. */
+export const nexusLabel = (): string => {
+  if (embedded()) return `${window.location.host}/ds-mino-api`
+  return nexusOrigin().replace(/^https?:\/\//, '')
+}
+
 export const getWsUrl = (): string => {
   if (embedded()) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'

@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
-import { nexusOrigin } from '@/lib/config'
+import { nexusLabel } from '@/lib/config'
 
 /** 登录和「正在确认」共用这一块，避免确认态缩成一个会把字拆开的转圈。 */
 export function AuthShell({ children }: { children: ReactNode }) {
-  const host = nexusOrigin().replace(/^https?:\/\//, '')
+  const host = nexusLabel()
 
   return (
     <div className="flex h-full items-center justify-center" style={{ padding: 24, background: 'var(--w-bg)' }}>

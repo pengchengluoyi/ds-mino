@@ -1,7 +1,7 @@
 import { Button, DataTable, PageHeader, StatusPill, toStatusKind, errText, type DataColumn } from '@/ui'
 import { RefreshCw } from 'lucide-react'
 import { useQueryClient } from '@tanstack/react-query'
-import { nexusOrigin, usesDevProxy } from '@/lib/config'
+import { nexusLabel } from '@/lib/config'
 import { healthKeys, useHealth, useRuntimeStatus, useServerInfo } from './queries'
 
 import type { RuntimeEndpoint } from '@/types/auth'
@@ -43,7 +43,7 @@ export function HealthPage() {
   const health = useHealth()
   const runtime = useRuntimeStatus()
 
-  const origin = usesDevProxy() ? window.location.origin : nexusOrigin()
+  const origin = nexusLabel()
   const reachable = info.isSuccess || health.isSuccess
   const checking = !reachable && (info.isPending || health.isPending)
   const connectionLabel = reachable ? (info.isError || health.isError ? '部分连接正常' : '已连接') : checking ? '正在连接' : '无法连接'

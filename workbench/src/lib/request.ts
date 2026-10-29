@@ -53,8 +53,11 @@ const sessionReallyGone = async (): Promise<boolean> => {
 const kickToLogin = () => {
   clearTokens()
   window.dispatchEvent(new CustomEvent('mino:unauthorized'))
-  if (!window.location.pathname.startsWith('/login')) {
-    window.location.href = '/login'
+  // Stay inside the mount point: an absolute `/login` would leave the
+  // `/ds-mino/` iframe and land on the DSH shell's own route.
+  const login = `${import.meta.env.BASE_URL.replace(/\/$/, '')}/login`
+  if (!window.location.pathname.startsWith(login)) {
+    window.location.href = login
   }
 }
 
